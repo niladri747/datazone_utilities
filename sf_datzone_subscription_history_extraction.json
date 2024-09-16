@@ -1,0 +1,48 @@
+{
+  "Comment": "A state machine that triggers two Lambda functions in sequence",
+  "StartAt": "extract_datazone_details_to_csv",
+  "States": {
+    "extract_datazone_details_to_csv": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-southeast-1:509730679068:function:extract_datazone_subscription_details",
+        "Payload": {
+          "Input.$": "$"
+        }
+      },
+      "Next": "load_csv_to_redshift",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FailState"
+        }
+      ]
+    },
+    "load_csv_to_redshift": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-southeast-1:509730679068:function:lamda_datazone_subscription_extract_redshift",
+        "Payload": {
+          "Input.$": "$"
+        }
+      },
+      "End": true,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "FailState"
+        }
+      ]
+    },
+    "FailState": {
+      "Type": "Fail",
+      "Cause": "Lambda function execution failed"
+    }
+  }
+}
