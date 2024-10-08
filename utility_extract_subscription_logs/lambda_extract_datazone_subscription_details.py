@@ -6,6 +6,23 @@ import os
 from datetime import datetime
 from botocore.exceptions import ClientError
 
+def keys_exists(element, *keys):
+    '''
+    Check if *keys (nested) exists in `element` (dict).
+    '''
+    if not isinstance(element, dict):
+        raise AttributeError('keys_exists() expects dict as first argument.')
+    if len(keys) == 0:
+        raise AttributeError('keys_exists() expects at least two arguments, one given.')
+
+    _element = element
+    for key in keys:
+        try:
+            _element = _element[key]
+        except KeyError:
+            return False
+    return True
+
 def get_datazone_subscription_details_csv(domain_id, project_id, bucket_name, csv_file_path):
     """
     Retrieves the subscription details for data assets in an Amazon DataZone project and writes them to a CSV file.
@@ -49,7 +66,7 @@ def get_datazone_subscription_details_csv(domain_id, project_id, bucket_name, cs
         subscriptions = []
 
         # Open the CSV file for writing
-        with open(local_csv_file_path, mode='w', newline='') as csv_file:
+        with open(local_csv_file_path, mode='a', newline='') as csv_file:
             fieldnames = ['Datazone Asset Name', 'Asset System Name', 'Subscription ID', 'Subscriber Project', 'Subscription Status', 'Subscription Request ID', 'Created At', 'Created By', 'Updated At', 'Updated By', 'filter_name', 'filter_columns', 'filter_row_expression']
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)            
             # Write the header row
@@ -69,55 +86,67 @@ def get_datazone_subscription_details_csv(domain_id, project_id, bucket_name, cs
                         subscription_id = subscription['id']
                         print(f"Processing subscription ID: {subscription_id}")
                         subscription_details = datazone.get_subscription(domainIdentifier=domain_id, identifier=subscription_id)
-
+                        print(subscription_details)
                         asset_id = subscription_details['subscribedListing']['item']['assetListing']['entityId']
                         print(f"Processing asset ID: {asset_id}")
                         asset_details = datazone.get_asset(domainIdentifier=domain_id, identifier=asset_id)
                         asset_system_name = asset_details['externalIdentifier']
                         filters = []
-                        asset_scope = subscription_details['subscribedListing']['item']['assetListing']['assetScope']
-
-                        # Get the list of filter IDs for the asset
-                        filters = asset_scope['filterIds']
-
                         filter_name =[]
                         filter_columns = []
                         filter_row_expression = []
+                        
+                        assetcope_key_check = keys_exists(subscription_details, "subscribedListing","item","assetListing","assetScope")
+                        print(assetcope_key_check)
+                        
+                        if assetcope_key_check is False:
+                            filter_name = 'Full Access'
+                            filter_columns = []
+                            filter_row_expression = []
+                            
+                        else:
+                            asset_scope = subscription_details['subscribedListing']['item']['assetListing']['assetScope']
+    
+                            # Get the list of filter IDs for the asset
+                            filters = asset_scope['filterIds']
+                            print(filters)
+    
+                            
                         for filter in filters:
                             # Get the details of each filter
                             filter_details = datazone.get_asset_filter(assetIdentifier = asset_id, domainIdentifier = domain_id, identifier = filter)
                             filter_name.append(filter_details['name'])
                             if 'effectiveColumnNames' in filter_details:
                                 filter_columns = filter_details['effectiveColumnNames']
-
+    
                             if 'effectiveRowFilter' in filter_details:
                                 filter_row_expression = filter_details['effectiveRowFilter']
-
-                        # Find the subscription request ID for the subscription to find the requester of the subscription
-                        subscription_request_id = subscription_details['subscriptionRequestId']
-                        create_by_id = datazone.get_subscription_request_details(domainIdentifier = domain_id, identifier = subscription_request_id)['createdBy']
-                        updated_by_id = subscription_details['updatedBy']
-                        # Find the name of the requester of the subscription and the approver/rejector
-                        created_by_name = datazone.get_user_profile(domainIdentifier=domain_id, userIdentifier=create_by_id)['details']['iam']['arn']
-                        updated_by_name = datazone.get_user_profile(domainIdentifier=domain_id, userIdentifier=updated_by_id)['details']['iam']['arn']
-
-                        # Write the subscription details to the CSV file
+    
+                            # Find the subscription request ID for the subscription to find the requester of the subscription
+                            subscription_request_id = subscription_details['subscriptionRequestId']
+                            create_by_id = datazone.get_subscription_request_details(domainIdentifier = domain_id, identifier = subscription_request_id)['createdBy']
+                            updated_by_id = subscription_details['updatedBy']
+                            # Find the name of the requester of the subscription and the approver/rejector
+                            created_by_name = datazone.get_user_profile(domainIdentifier=domain_id, userIdentifier=create_by_id)['details']['iam']['arn']
+                            updated_by_name = datazone.get_user_profile(domainIdentifier=domain_id, userIdentifier=updated_by_id)['details']['iam']['arn']
+    
+                    # Write the subscription details to the CSV file
                         row = {
-                            'Datazone Asset Name': subscription_details['subscribedListing']['name'],
-                            'Asset System Name': asset_system_name,
-                            'Subscription ID': subscription_id,
-                            'Subscriber Project': subscription_details['subscribedPrincipal']['project']['name'],
-                            'Subscription Status': subscription_details['status'],
-                            'Subscription Request ID': subscription_details['subscriptionRequestId'],
-                            'Created At': subscription_details['createdAt'].strftime('%Y-%m-%d %H:%M:%S'),
-                            'Created By': created_by_name,
-                            'Updated At': subscription_details['updatedAt'].strftime('%Y-%m-%d %H:%M:%S'),
-                            'Updated By': updated_by_name,
-                            'filter_name': filter_name,
-                            'filter_columns': filter_columns,
-                            'filter_row_expression': filter_row_expression
-                        }
-                        
+                                'Datazone Asset Name': subscription_details['subscribedListing']['name'],
+                                'Asset System Name': asset_system_name,
+                                'Subscription ID': subscription_id,
+                                'Subscriber Project': subscription_details['subscribedPrincipal']['project']['name'],
+                                'Subscription Status': subscription_details['status'],
+                                'Subscription Request ID': subscription_details['subscriptionRequestId'],
+                                'Created At': subscription_details['createdAt'].strftime('%Y-%m-%d %H:%M:%S'),
+                                'Created By': created_by_name,
+                                'Updated At': subscription_details['updatedAt'].strftime('%Y-%m-%d %H:%M:%S'),
+                                'Updated By': updated_by_name,
+                                'filter_name': filter_name,
+                                'filter_columns': filter_columns,
+                                'filter_row_expression': filter_row_expression
+                            }
+                            
                         writer.writerow(row)
     
     except ClientError as e:
